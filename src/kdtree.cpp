@@ -12,7 +12,7 @@ using namespace dhlib;
 
 template<unsigned K, typename T,typename Ealloc,typename Palloc,typename Lalloc>
 template<typename coord>
-pair<const LeafNode<K,T,Ealloc>&, KDNode<K,T,Ealloc>*&> KDTree<K,T,Ealloc,Palloc,Lalloc>::getLeaf(const coord& point){
+LeafData<K,T,Ealloc> KDTree<K,T,Ealloc,Palloc,Lalloc>::getLeaf(const coord& point){
 	unsigned i (0);
 	KDNode<K,T,Ealloc> **childPtr = root, *current = root;
 	while(!current->isLeaf){

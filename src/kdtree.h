@@ -206,7 +206,7 @@ namespace dhlib {
 
 		// gets the leaf the specified point goes to along with a reference to the pointer that points to the leaf
 		template<typename coord>
-		std::pair<const LeafNode<K,T,Ealloc>&, KDNode<K,T,Ealloc>*&> getLeaf(const coord& point);
+		LeafData<K,T,Ealloc> getLeaf(const coord& point);
 	public:
 		using iterator = kd_iter<K,T>;
 
