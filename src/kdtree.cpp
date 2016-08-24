@@ -39,7 +39,6 @@ SEEK:;
 	while(parents.size() > 0){ // back up from the right, deleting any parents whose right child is deleted
 		ParentNode<K,T,C>* parent = parents.top();
 		parents.pop();
-		int x = 0;
 		if(deleted == parent->right){
 			palloc.deallocate(parent, 1);
 			deleted = parent;
@@ -74,16 +73,16 @@ GetLeafResult<K,T,C> KDTree<K,T,C,Palloc,Lalloc>::getLeaf(const Point& point){
 }
 
 
-template<int K, typename T,int C,typename Palloc,typename Lalloc>
+template<int K,typename T,int C,typename Palloc,typename Lalloc>
 template<typename Point>
-void KDTree<K,T,C,Palloc,Lalloc>::insert(const Point& point, T&& elem){
+T& KDTree<K,T,C,Palloc,Lalloc>::operator[](const Point& point){
 	GetLeafResult<K,T,C> leafData = getLeaf(point);
 	LeafNode<K,T,C>& leaf = leafData.leaf;
 	KDNode<K,T,C>*& childPtr = leafData.childPtr;
 
 	int i = 0;
 	while(leaf.isFilled[i++]){
-		if(i == C){
+		if(i == C){ // if leaf is full, split leaf
 			ParentNode<K,T,C>& parent = leaf.split(leafData.i);
 			if(point[leafData.i] > parent.value){
 				&leaf = parent.right;
@@ -98,6 +97,7 @@ void KDTree<K,T,C,Palloc,Lalloc>::insert(const Point& point, T&& elem){
 	for(int n = 0; n < K; n++){ // copy coordinates into tree
 		leaf.coords[i][n] = point[n];
 	}
+	return leaf.values[i];
 }
 
 
@@ -146,7 +146,6 @@ ParentNode<K,T,C> LeafNode<K,T,C>::split(int dim) {
 	Lalloc lalloc;
 
 	// quick search to find median element
-	int i = 0;
 	double pivot;
 	int min = 0;
 	int max = K-1;
@@ -164,7 +163,7 @@ ParentNode<K,T,C> LeafNode<K,T,C>::split(int dim) {
 			swap(coords[above], coords[below]);
 			swap(values[above], coords[below]);
 		}
-		if(below < values + K / 2 - 1){ // we will choose the left median when there is even values
+		if(below < values + K / 2 - 1){ // we will choose the left median when there is even number of values
 			min = below;
 		} else {
 			max = below;
@@ -179,7 +178,7 @@ ParentNode<K,T,C> LeafNode<K,T,C>::split(int dim) {
 	lalloc.construct(newRight);
 
 	ParentNode<K,T,C>* parent = palloc.alocate(1);
-	palloc.construct(parent, min[0][dim], *newLeft, *newRight); // copy the right elements into the right child
+	palloc.construct(parent, coords[min][dim], *newLeft, *newRight); // copy the right elements into the right child
 
 	// partitioning of the values using the median
 	coord<K>* left = newLeft->values;
@@ -211,22 +210,6 @@ typename LeafNode<K,T,C>::iterator LeafNode<K,T,C>::begin() const {
 template<int K, typename T, int C>
 typename LeafNode<K,T,C>::iterator LeafNode<K,T,C>::end() const {
 	return iterator(*this,true);
-}
-
-// simple insertion sort, performs well for small arrays
-template<int K, typename T, int C>
-void LeafNode<K,T,C>::sort(int dim){
-	for(int i = 1; i < K; i++) {
-		for(int j = i; j > 0; j--){
-			if(coords[j][dim] < coords[j-1][dim]){
-				swap(coords[j], coords[j-1]);
-				swap(values[j], values[j-1]);
-				swap(isFilled[j], isFilled[j-1]);
-			} else {
-				break;
-			}
-		}
-	}
 }
 
 template<int K, typename T, int C>

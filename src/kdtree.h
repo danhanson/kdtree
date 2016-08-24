@@ -199,12 +199,7 @@ namespace dhlib {
 		~KDTree();
 
 		template<typename Point>
-		void insert(const Point&, T&& elem);
-
-		template<typename Point>
-		void insert(const Point&, const T& elem){
-			insert(move(copy(elem)));
-		}
+		T& operator[](const Point&);
 
 		template<typename Point>
 		int erase(const Point&);
