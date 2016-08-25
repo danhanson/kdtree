@@ -26,7 +26,7 @@ KDTree<K,T,C,Palloc,Lalloc>::~KDTree(){
 	KDNode<K,T,C>* current = root;
 
 // since we need the parents to identify their children, we remove the children first before removing
-// the parents
+// the parents by preorder traversal
 SEEK:;
 	while(!current->isLeaf){ // go to left most leaf below current
 		ParentNode<K,T,C>* parent = (ParentNode<K,T,C>*) current;
@@ -53,7 +53,7 @@ template<int K, typename T,int C,typename Palloc,typename Lalloc>
 template<typename Point>
 GetLeafResult<K,T,C> KDTree<K,T,C,Palloc,Lalloc>::getLeaf(const Point& point){
 	int i = 0;
-	KDNode<K,T,C> **childPtr = root, *current = root;
+	KDNode<K,T,C> **childPtr = &root, *current = root;
 	while(!current->isLeaf){
 		double eVal = point[i++];
 		ParentNode<K,T,C>* parent = (ParentNode<K,T,C>*) current;
@@ -68,8 +68,9 @@ GetLeafResult<K,T,C> KDTree<K,T,C,Palloc,Lalloc>::getLeaf(const Point& point){
 			i = 0;
 		}
 	}
-	LeafNode<K,T,C>& leaf = (ParentNode<K,T,C>&) current;
-	return GetLeafResult<K,T,C>(leaf, *childPtr, i);
+	LeafNode<K,T,C>* leaf = (LeafNode<K,T,C>*) current;
+	GetLeafResult<K,T,C> ret {leaf, childPtr, i};
+	return ret;
 }
 
 
@@ -77,27 +78,30 @@ template<int K,typename T,int C,typename Palloc,typename Lalloc>
 template<typename Point>
 T& KDTree<K,T,C,Palloc,Lalloc>::operator[](const Point& point){
 	GetLeafResult<K,T,C> leafData = getLeaf(point);
-	LeafNode<K,T,C>& leaf = leafData.leaf;
-	KDNode<K,T,C>*& childPtr = leafData.childPtr;
+	LeafNode<K,T,C> *leaf = leafData.leaf;
+	KDNode<K,T,C>** childPtr = leafData.childPtr;
 
 	int i = 0;
-	while(leaf.isFilled[i++]){
+	while(leaf->isFilled[i]){
 		if(i == C){ // if leaf is full, split leaf
-			ParentNode<K,T,C>& parent = leaf.split(leafData.i);
-			if(point[leafData.i] > parent.value){
-				&leaf = parent.right;
+			ParentNode<K,T,C> *parent = leaf->template split<Palloc,Lalloc>(leafData.i);
+			if(point[leafData.i] > parent->value){
+				leaf = (LeafNode<K,T,C>*) parent->right;
 				i = (C + 1) / 2;
 			} else {
-				&leaf = parent.left;
+				leaf = (LeafNode<K,T,C>*) parent->left;
 				i = C / 2;
 			}
+			*childPtr = parent; // move parent's pointer from deleted leaf to new parent
+		} else {
+			++i;
 		}
 	}
-	leaf.isFilled[i] = true;
+	leaf->isFilled[i] = true;
 	for(int n = 0; n < K; n++){ // copy coordinates into tree
-		leaf.coords[i][n] = point[n];
+		leaf->coords[i][n] = point[n];
 	}
-	return leaf.values[i];
+	return leaf->values[i];
 }
 
 
@@ -140,8 +144,13 @@ LeafNode<K,T,C>::LeafNode(InputIterator start, InputIterator end) : LeafNode<K,T
 }
 
 template<int K, typename T, int C>
+void LeafNode<K,T,C>::clear() {
+	fill(isFilled.begin(), isFilled.end(), false);
+}
+
+template<int K, typename T, int C>
 template<typename Palloc, typename Lalloc>
-ParentNode<K,T,C> LeafNode<K,T,C>::split(int dim) {
+ParentNode<K,T,C>* LeafNode<K,T,C>::split(int dim) {
 	Palloc palloc;
 	Lalloc lalloc;
 
@@ -161,9 +170,9 @@ ParentNode<K,T,C> LeafNode<K,T,C>::split(int dim) {
 				above--;
 			}
 			swap(coords[above], coords[below]);
-			swap(values[above], coords[below]);
+			swap(values[above], values[below]);
 		}
-		if(below < values + K / 2 - 1){ // we will choose the left median when there is even number of values
+		if(below < K / 2){ // we will choose the left median when there is even number of values
 			min = below;
 		} else {
 			max = below;
@@ -177,14 +186,14 @@ ParentNode<K,T,C> LeafNode<K,T,C>::split(int dim) {
 	LeafNode<K,T,C>* newRight = lalloc.allocate(1);
 	lalloc.construct(newRight);
 
-	ParentNode<K,T,C>* parent = palloc.alocate(1);
+	ParentNode<K,T,C>* parent = palloc.allocate(1);
 	palloc.construct(parent, coords[min][dim], *newLeft, *newRight); // copy the right elements into the right child
 
 	// partitioning of the values using the median
-	coord<K>* left = newLeft->values;
-	coord<K>* right = newRight->values;
-	for(coord<K>* iter = values.begin(); iter != values.end(); ++iter){
-		if(*iter > parent->value){
+	coord<K>* left = newLeft->coords.begin();
+	coord<K>* right = newRight->coords.begin();
+	for(coord<K>* iter = coords.begin(); iter != coords.end(); ++iter){
+		if(iter[0][dim] > parent->value){
 			*right = *iter;
 			++right;
 		} else {
@@ -193,13 +202,13 @@ ParentNode<K,T,C> LeafNode<K,T,C>::split(int dim) {
 		}
 	}
 
-	fill(newLeft->isFilled, newLeft->isFilled.begin() + C/2, true);
-	fill(newLeft->isFilled + C/2, newLeft->end(), false);
+	fill(newLeft->isFilled.begin(), newLeft->isFilled.begin() + C/2, true);
+	fill(newLeft->isFilled.begin() + C/2, newLeft->isFilled.end(), false);
 
-	fill(newRight->isFilled, newRight->isFilled + (C+1)/2, true);
-	fill(newRight->isFilled + (C+1)/2, newRight->end(), false);
+	fill(newRight->isFilled.begin(), newRight->isFilled.begin() + (C+1)/2, true);
+	fill(newRight->isFilled.begin() + (C+1)/2, newRight->isFilled.end(), false);
 	lalloc.deallocate(this,1);
-	return *parent;
+	return parent;
 }
 
 template<int K, typename T, int C>
@@ -218,11 +227,12 @@ LeafNode<K,T,C>::iterator::iterator() : leaf(nullptr), i() { }
 template<int K, typename T, int C>
 LeafNode<K,T,C>::iterator::iterator(const LeafNode& leaf, bool isEnd) : leaf(&leaf), i(0) {
 	if(isEnd){
-		i = K;
+		i = C;
 	} else {
-		do {
-			i++;
-		} while(i < K && !leaf.isFilled[i]);
+		i = 0;
+		while(i < C && !leaf.isFilled[i]){
+			++i;
+		}
 	}
 }
 
@@ -233,7 +243,7 @@ template<int K, typename T, int C>
 typename LeafNode<K,T,C>::iterator& LeafNode<K,T,C>::iterator::operator++(){
 	do {
 		i++;
-	} while(i < K && !leaf->isFilled[i]);
+	} while(i < C && !leaf->isFilled[i]);
 	return *this;
 }
 
@@ -265,12 +275,7 @@ typename LeafNode<K,T,C>::iterator& LeafNode<K,T,C>::iterator::operator=(const i
 	i = iter.i;
 	return *this;
 }
-/*
-template<int K, typename T, int C>
-typename LeafNode<K,T,C>::iterator& LeafNode<K,T,C>::iterator::operator=(iterator&& iter){
-	return (*this)(iter);
-}
-*/
+
 template<int K, typename T, int C>
 entry<K,T> LeafNode<K,T,C>::iterator::operator*() const {
 	const coord<K>& point = leaf->coords[i];
@@ -334,21 +339,23 @@ typename KDTree<K,T,C,Palloc,Lalloc>::StdIter& KDTree<K,T,C,Palloc,Lalloc>::StdI
 	if(this->leaf == nullptr){ // iterator is at end and/or uninitialized
 		return *this;
 	}
-	this->iter++;
+	++this->iter;
 	while(this->iter == this->leaf->end()){
 		const KDNode<K,T,C> *child = this->leaf;
-		while(parents.size() > 0){
+		while(parents.size() > 0){ // back track to parent with right child
 			const ParentNode<K,T,C> *parent = parents.top();
 			if(parent->left == child){
-				this->leaf = &seekLeft(*(parent->right));
+				this->leaf = &seekLeft(*(parent->right)); // get left most child of right child
 				this->iter = this->leaf->begin();
-				goto outer;
+				goto CHECK_ITER;
 			}
 			child = parent;
 		}
-outer:;
+		// backtracked up to root, no nodes left, set leaf to null to indicate that this is an end
+		this->leaf = nullptr;
+		break;
+	CHECK_ITER:;
 	}
-	this->leaf = nullptr;
 	return *this;
 }
 

@@ -13,7 +13,7 @@
 #include <iterator>
 #include <stack>
 #include <cmath>
-#include <tuple>
+#include <cstdarg>
 
 namespace dhlib {
 
@@ -64,7 +64,7 @@ namespace dhlib {
 		double value;
 		KDNode<K,T,C> *left, *right;
 		ParentNode(double value, KDNode<K, T, C>& left, KDNode<K, T, C>& right) :
-				KDNode<K, T, C>(false), value(value), left(left), right(right) { }
+				KDNode<K,T,C>(false), value(value), left(&left), right(&right) { }
 	};
 
 	template<int K, typename T, int C>
@@ -98,15 +98,16 @@ namespace dhlib {
 		};
 
 		template<typename Palloc, typename Lalloc>
-		ParentNode<K,T,C> split(int dim);
+		ParentNode<K,T,C>* split(int dim);
 		iterator begin() const;
 		iterator end() const;
+		void clear();
 	};
 
 	template<int K, typename T, int C>
 	struct GetLeafResult {
-		const LeafNode<K,T,C>& leaf;
-		KDNode<K,T,C>*& childPtr;
+		LeafNode<K,T,C>* leaf;
+		KDNode<K,T,C>** childPtr;
 		int i;
 	};
 
@@ -145,6 +146,26 @@ namespace dhlib {
 			bool operator!=(const StdIter& iter) const;
 
 			entry<K,T> operator*() const;
+		};
+
+		struct Values {
+			const KDTree<K,T,C,Palloc,Lalloc>* const tree;
+			class iterator : public StdIter {
+			public:
+				iterator() : StdIter() { }
+				iterator(const KDTree& tree) : StdIter(tree) { }
+				iterator(const iterator& iter) : StdIter(iter) { }
+				iterator(const iterator&& iter) : StdIter(iter) { }
+				T& operator*() const {
+					return StdIter::operator*().second;
+				}
+			};
+			iterator begin(){
+				return iterator(*tree);
+			}
+			iterator end(){
+				return iterator();
+			}
 		};
 
 		// a box that contains a volume of space covered by this tree
@@ -186,20 +207,28 @@ namespace dhlib {
 		// gets the leaf the specified point goes to along with a reference to the pointer that points to the leaf
 		template<typename Point>
 		GetLeafResult<K,T,C> getLeaf(const Point& point);
-	void splitLeaf(const LeafNode<K, T, C>*&);
 	public:
 		using iterator = StdIter;
 		using bbox_iterator = BoxIter;
 
+		Values values { this };
+
 		KDTree() {
 			LeafNode<K,T,C> *leaf = lalloc.allocate(1);
 			lalloc.construct(leaf);
+			leaf->clear();
 			root = leaf;
 		}
 		~KDTree();
 
 		template<typename Point>
 		T& operator[](const Point&);
+
+		template<typename ...Numbers>
+		T& operator()(Numbers... dims){
+			std::array<double, sizeof...(Numbers)> x = {{ dims... }};
+			return (*this)[x];
+		}
 
 		template<typename Point>
 		int erase(const Point&);
