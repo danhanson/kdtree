@@ -280,7 +280,7 @@ template<int K, typename T, int C>
 entry<K,T> LeafNode<K,T,C>::iterator::operator*() const {
 	const coord<K>& point = leaf->coords[i];
 	T& value = const_cast<T&>(leaf->values[i]); // XXX WHY IS leaf->values[i] CONST?
-	pair<const coord<K>&, T&> pair (point, value);
+	pair<const coord<K>*, T*> pair (&point, &value);
 	return pair;
 }
 
@@ -397,7 +397,7 @@ bool KDTree<K,T,C,Palloc,Lalloc>::StdIter::operator!=(const StdIter& iter) const
 
 template<int K, typename T,int C,typename Palloc,typename Lalloc>
 entry<K,T> KDTree<K,T,C,Palloc,Lalloc>::StdIter::operator*() const {
-	return *(this->iter);
+	return *iter;
 }
 
 template<int K, typename T,int C,typename Palloc,typename Lalloc>
@@ -433,6 +433,15 @@ template<int K, typename T,int C,typename Palloc,typename Lalloc>
 KDTree<K,T,C,Palloc,Lalloc>::BoxIter::BoxIter(BoxIter&& other)
 		: parents(move(other.parents)), leaf(other.leaf), iter(move(other.iter)), bbox(other.bbox) { }
 
+template<int K, typename T,int C,typename Palloc,typename Lalloc>
+template<typename Point>
+KDTree<K,T,C,Palloc,Lalloc>::BoxIter::BoxIter(const KDTree& tree, const Point& lowerLeft, const Point& upperRight) {
+	for(int i = 0; i < K; ++i){
+		bbox.lowerLeft[i] = lowerLeft[i];
+		bbox.upperRight[i] = upperRight[i];
+	}
+	seek(*tree.root,0);
+}
 
 // starting from a leaf, goes to the next leaf in the bounded box, or nullptr if no next leaf exists
 template<int K, typename T,int C,typename Palloc,typename Lalloc>
@@ -458,7 +467,7 @@ void KDTree<K,T,C,Palloc,Lalloc>::BoxIter::nextLeaf() {
 template<int K, typename T,int C,typename Palloc,typename Lalloc>
 void KDTree<K,T,C,Palloc,Lalloc>::BoxIter::seek(const KDNode<K,T,C>& start, int dim) {
 	const KDNode<K,T,C>* node = &start;
-	while(false) {
+	do {
 		while(!node->isLeaf){
 			ParentNode<K,T,C>* parent = (ParentNode<K,T,C>*) node;
 			if(parent->value > bbox.lowerLeft[dim]){
@@ -471,14 +480,18 @@ void KDTree<K,T,C,Palloc,Lalloc>::BoxIter::seek(const KDNode<K,T,C>& start, int 
 		}
 		leaf = (LeafNode<K,T,C>*) node;
 		iter = leaf->begin();
-		if(iter == leaf->end()){
-			nextLeaf();
-			if(node == nullptr){
+		while(iter != leaf->end()){
+			if(bbox.contains(*((*iter).first))){
 				return;
 			}
-			continue;
+			++iter;
 		}
-	}
+		nextLeaf();
+		if(node == nullptr){
+			return;
+		}
+		continue;
+	} while(node != nullptr);
 }
 
 template<int K, typename T,int C,typename Palloc,typename Lalloc>
@@ -487,11 +500,15 @@ typename KDTree<K,T,C,Palloc,Lalloc>::BoxIter& KDTree<K,T,C,Palloc,Lalloc>::BoxI
 		return *this;
 	}
 	do {
-		++iter;
 		if(iter == leaf->end()){
 			nextLeaf();
+			if(leaf == nullptr){
+				return *this;
+			}
+		} else {
+			++iter;
 		}
-	} while(bbox.contains((*iter).first));
+	} while(!bbox.contains(*(*iter).first));
 	return *this;
 }
 
@@ -501,6 +518,11 @@ typename KDTree<K,T,C,Palloc,Lalloc>::BoxIter KDTree<K,T,C,Palloc,Lalloc>::BoxIt
 	BoxIter old (*this);
 	++(*this);
 	return old;
+}
+
+template<int K, typename T,int C,typename Palloc,typename Lalloc>
+entry<K,T> KDTree<K,T,C,Palloc,Lalloc>::BoxIter::operator*() const {
+	return *iter;
 }
 
 template<int K, typename T,int C,typename Palloc,typename Lalloc>
@@ -523,7 +545,7 @@ typename KDTree<K,T,C,Palloc,Lalloc>::BoxIter& KDTree<K,T,C,Palloc,Lalloc>::BoxI
 
 template<int K, typename T,int C,typename Palloc,typename Lalloc>
 bool KDTree<K,T,C,Palloc,Lalloc>::BoxIter::operator==(const BoxIter& iter) const {
-	return this->iter == iter.iter;
+	return (this->leaf == nullptr && iter.leaf == nullptr) || this->iter == iter.iter;
 }
 
 template<int K, typename T,int C,typename Palloc,typename Lalloc>
@@ -531,7 +553,3 @@ bool KDTree<K,T,C,Palloc,Lalloc>::BoxIter::operator!=(const BoxIter& iter) const
 	return !(*this == iter);
 }
 
-template<int K, typename T,int C,typename Palloc,typename Lalloc>
-entry<K,T> KDTree<K,T,C,Palloc,Lalloc>::BoxIter::operator*() const {
-	return *(this->iter);
-}

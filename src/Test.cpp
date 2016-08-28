@@ -6,6 +6,7 @@
 #include <set>
 #include <array>
 #include <cstdio>
+#include <vector>
 #include "kdtree.cpp"
 
 using namespace dhlib;
@@ -39,6 +40,18 @@ void testRootLeaf(){
 		count++;
 	}
 	ASSERTM("tree has 8 elements", count == 8);
+	array<double, 4> left = {1,1,1,1};
+	array<double, 4> right = {10,10,10,10};
+	set<string> queried = {"one","two","seven","eight" };
+	count = 0;
+	for(auto ent = tree.get(left,right); ent != tree.getEnd(); ++ent){
+		entry<4,string> x = (*ent);
+		count++;
+		char buf[64];
+		sprintf(buf,"string from query is valid: %s", x.second->c_str());
+		ASSERTM(buf, queried.find(*x.second) != queried.end());
+	}
+	ASSERTM("r items from query", count == 4);
 }
 
 bool runAllTests(int argc, char const *argv[]) {

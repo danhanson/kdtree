@@ -14,6 +14,7 @@
 #include <stack>
 #include <cmath>
 #include <cstdarg>
+#include <memory>
 
 namespace dhlib {
 
@@ -38,7 +39,7 @@ namespace dhlib {
 	using coord = std::array<double,K>;
 
 	template<int K, typename T>
-	using entry = std::pair<const coord<K>&, T&>;
+	using entry = std::pair<const coord<K>*, T*>;
 
 	template<int K>
 	double distanceSquared(const coord<K>& c1, const coord<K>& c2) {
@@ -95,6 +96,9 @@ namespace dhlib {
 			bool operator==(const iterator& iter) const;
 			bool operator!=(const iterator& iter) const;
 			entry<K,T> operator*() const;
+			entry<K,T>* operator->() const {
+				return std::unique_ptr<entry<K,T>>(std::move(this->operator*()));
+			}
 		};
 
 		template<typename Palloc, typename Lalloc>
@@ -146,6 +150,11 @@ namespace dhlib {
 			bool operator!=(const StdIter& iter) const;
 
 			entry<K,T> operator*() const;
+			std::unique_ptr<entry<K,T>> operator->() const {
+				std::unique_ptr<entry<K,T>> ret (new entry<K,T>);
+				*ret = std::move(this->operator*());
+				return ret;
+			}
 		};
 
 		struct Values {
@@ -157,7 +166,7 @@ namespace dhlib {
 				iterator(const iterator& iter) : StdIter(iter) { }
 				iterator(const iterator&& iter) : StdIter(iter) { }
 				T& operator*() const {
-					return StdIter::operator*().second;
+					return *(StdIter::operator*().second);
 				}
 			};
 			iterator begin(){
@@ -190,6 +199,9 @@ namespace dhlib {
 			BoxIter(const BoxIter&);
 			BoxIter(BoxIter&&);
 
+			template<typename Point>
+			BoxIter(const KDTree& tree, const Point& lowerLeft, const Point& upperRight);
+
 			BoxIter& operator++();
 			BoxIter operator++(int);
 
@@ -200,6 +212,17 @@ namespace dhlib {
 			bool operator!=(const BoxIter& iter) const;
 
 			entry<K,T> operator*() const;
+			std::unique_ptr<entry<K,T>> operator->() const {
+				std::unique_ptr<entry<K,T>> ret (new entry<K,T>);
+				*ret = std::move(this->operator*());
+				return ret;
+			}
+			void swap(BoxIter& other){
+				std::swap(parents, other.parents);
+				std::swap(leaf, other.leaf);
+				std::swap(iter, other.iter);
+				std::swap(bbox, other.bbox);
+			}
 		};
 	protected:
 		KDNode<K,T,C>* root;
@@ -244,6 +267,15 @@ namespace dhlib {
 		}
 
 		bbox_iterator get(const BBox&) const;
+
+		template<typename Point>
+		bbox_iterator get(const Point& lowerLeft, const Point& upperRight) const {
+			return BoxIter (*this, lowerLeft, upperRight);
+		}
+
+		bbox_iterator getEnd() const {
+			return BoxIter();
+		}
 	};
 }
 #endif /* KDTREE_H_ */
